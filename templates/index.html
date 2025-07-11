@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard AI</title>
+    ><script src="/static/script.js"defer></script>
+</head>
+<body>
+    <h1>📋 Regras de Automação</h1>
+    <ul id="rules_list">
+        {% for rule in rules %}
+            <li><b>{{rule.id}}</b>: {{rule.condition}}</li>
+        {% endfor %}
+    </ul>
+
+    <h2>➕ Nova Regra</h2>
+    <form id="rule_form">
+        <label>ID: <input type="text" name="id" required></label><br>
+        <label>Condição: <input type="text" name="condition" required></label><br>
+        <label>Ação (json): <textarea name="action" required>{"type":"send_email","to":"alguem@example.com"}</textarea></label>
+        <button type="submit">Guardar</button>
+    </form>
+    <div id="msg"></div>
+</body>
+</html>

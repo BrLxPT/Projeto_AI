@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+requests
+pydantic
+apscheduler
+python-dotenv
+jinja2
