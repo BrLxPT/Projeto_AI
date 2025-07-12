@@ -1,27 +1,44 @@
-document.getElementById("rule-form").addEventListener("submit", async function (e) {
-    e.preventDefault();
+document.addEventListener("DOMContentLoaded", () => {
+    const form = document.getElementById("rule-form");
+    const msgDiv = document.getElementById("msg");
 
-    const form = e.target;
-    const id = form.id.value;
-    const condition = form.condition.value;
-    let action;
+    form.addEventListener("submit", async function (e) {
+        e.preventDefault();
 
-    try {
-        action = JSON.parse(form.action.value);
-    } catch {
-        document.getElementById("msg").innerText = "❌ Ação não é JSON válido!";
-        return;
-    }
+        const id = form.id.value.trim();
+        const condition = form.condition.value.trim();
+        let action;
 
-    const response = await fetch("/rules", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id, condition, action })
+        try {
+            action = JSON.parse(form.action.value);
+        } catch {
+            msgDiv.innerText = "❌ JSON inválido.";
+            return;
+        }
+
+        const res = await fetch("/rules", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id, condition, action })
+        });
+
+        const result = await res.json();
+        msgDiv.innerText = result.message;
+        setTimeout(() => location.reload(), 1000);
     });
-
-    const result = await response.json();
-    document.getElementById("msg").innerText = result.message || "Erro";
-
-    // Reload page to see new rule
-    location.reload();
 });
+
+async function apagarRegra(id) {
+    if (!confirm(`Tens a certeza que queres apagar a regra "${id}"?`)) return;
+
+    const res = await fetch(`/rules/${id}`, { method: "DELETE" });
+    const result = await res.json();
+    alert(result.message);
+    location.reload();
+}
+
+async function avaliarRegras() {
+    const res = await fetch("/rules/evaluate", { method: "POST" });
+    const result = await res.json();
+    alert(result.message);
+}

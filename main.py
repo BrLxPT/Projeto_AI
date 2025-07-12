@@ -7,13 +7,14 @@ from rules_engine import evaluate_rule
 from typing import List, Dict
 from storage import load_rules, save_rules
 from scheduler import start_scheduler
+from models import Rule
 import threading
 import json, uuid
 
 app = FastAPI()
 rules_store = load_rules()
 
-app.mount("/staric", StaticFiles(directory="static", name="static"))
+app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 class RuleRequest(BaseModel):
