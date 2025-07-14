@@ -42,3 +42,18 @@ async function avaliarRegras() {
     const result = await res.json();
     alert(result.message);
 }
+
+async function carregarNotificacoes() {
+  const res = await fetch("/notifications");
+  const data = await res.json();
+  const ul = document.getElementById("notificacoes");
+  ul.innerHTML = "";
+  data.notificacoes.forEach(msg => {
+    const li = document.createElement("li");
+    li.textContent = msg;
+    ul.appendChild(li);
+  });
+}
+
+setInterval(carregarNotificacoes, 3000);
+carregarNotificacoes();

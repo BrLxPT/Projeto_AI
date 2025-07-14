@@ -56,3 +56,18 @@ button:hover {
     margin-top: 1rem;
     font-weight: bold;
 }
+
+body {
+  font-family: Arial, sans-serif;
+  padding: 2rem;
+  background: #f9f9f9;
+}
+
+input, select, button {
+  margin: 0.3rem;
+  padding: 0.4rem;
+}
+
+form {
+  margin-bottom: 2rem;
+}

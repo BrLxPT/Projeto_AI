@@ -1,16 +1,18 @@
 <!DOCTYPE html>
 <html lang="pt">
+
 <head>
     <meta charset="UTF-8">
     <title>Dashboard AI</title>
     <link rel="stylesheet" href="/static/style.css">
-    <script src="/static/script.js"defer></script>
+    <script src="/static/script.js" defer></script>
 </head>
+
 <body>
     <h1>📋 Regras de Automação</h1>
     <ul id="rules_list">
         {% for rule in rules %}
-            <li><b>{{rule.id}}</b>: {{rule.condition}}</li>
+        <li><b>{{rule.id}}</b>: {{rule.condition}}</li>
         {% endfor %}
     </ul>
 
@@ -18,9 +20,30 @@
     <form id="rule_form">
         <label>ID: <input type="text" name="id" required></label><br>
         <label>Condição: <input type="text" name="condition" required></label><br>
-        <label>Ação (json): <textarea name="action" required>{"type":"send_email","to":"alguem@example.com"}</textarea></label>
+        <label>Ação (json): <textarea name="action"
+                required>{"type":"send_email","to":"alguem@example.com"}</textarea></label>
         <button type="submit">Guardar</button>
     </form>
+    <h2>Adicionar nova regra</h2>
+    <form method="post" action="/rules/add">
+        <input name="id" placeholder="ID da regra" required />
+        <input name="condition" placeholder="Condição" required />
+        <select name="type">
+            <option value="send_email">Email</option>
+            <option value="call_api">API</option>
+            <option value="log">Log</option>
+            <option value="notify">Notificação</option>
+        </select>
+        <input name="to" placeholder="Para (email)" />
+        <input name="url" placeholder="URL da API" />
+        <input name="message" placeholder="Mensagem" />
+        <input name="payload" placeholder="Payload (JSON opcional)" />
+        <button type="submit">Adicionar Regra</button>
+    </form>
+
+    <h2>Notificações</h2>
+    <ul id="notificacoes"></ul>
+
     <div id="msg"></div>
 </body>
 </html>
