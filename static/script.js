@@ -1,30 +1,33 @@
 document.addEventListener("DOMContentLoaded", () => {
-    const form = document.getElementById("rule-form");
+    const formAI = document.getElementById("form_ai");
     const msgDiv = document.getElementById("msg");
 
-    form.addEventListener("submit", async function (e) {
+    formAI.addEventListener("submit", async (e) => {
         e.preventDefault();
 
-        const id = form.id.value.trim();
-        const condition = form.condition.value.trim();
-        let action;
+        const instrucao = document.getElementById("instrucao_input").value;
+
+        const formData = new FormData();
+        formData.append("instrucao", instrucao);
 
         try {
-            action = JSON.parse(form.action.value);
-        } catch {
-            msgDiv.innerText = "❌ JSON inválido.";
-            return;
+            const response = await fetch("/rules/generate/json", {
+                method: "POST",
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                msgDiv.innerHTML = `<p style="color:green;">✅ ${result.message}</p><pre>${JSON.stringify(result.rule, null, 2)}</pre>`;
+            } else {
+                msgDiv.innerHTML = `<p style="color:red;">❌ ${result.message}</p>`;
+            }
+
+        } catch (err) {
+            msgDiv.innerHTML = `<p style="color:red;">Erro ao comunicar com o servidor.</p>`;
+            console.error(err);
         }
-
-        const res = await fetch("/rules", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id, condition, action })
-        });
-
-        const result = await res.json();
-        msgDiv.innerText = result.message;
-        setTimeout(() => location.reload(), 1000);
     });
 });
 

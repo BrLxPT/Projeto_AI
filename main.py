@@ -1,21 +1,21 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from rules_engine import evaluate_rule
 from typing import List, Dict
+from rules_engine import evaluate_rule
 from storage import load_rules, save_rules
 from scheduler import start_scheduler
 from models import Rule
-from ollama_client import avaliar_condiçao_ollama
+from ollama_client import avaliar_condiçao_ollama, gerar_regra
 from actions import send_email, call_api, log_action
 import threading
-import json, uuid
+import json
 
 app = FastAPI()
 rules_store = load_rules()
-notificacoes = []
+notifications = []  
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
@@ -28,21 +28,22 @@ class RuleRequest(BaseModel):
 def dashboard(request: Request):
     return templates.TemplateResponse("index.html", {"request": request, "rules": rules_store})
 
-@app.post("/rules")
+@app.post("/rules", response_model=dict)
 def add_rule(rule: RuleRequest):
-    rules_store.append(rule)
+    rules_store.append(rule.dict())
     save_rules(rules_store)
-    return{"message": "Regra adicionada com sucesso."}
+    return {"message": "Regra adicionada com sucesso."}
 
 @app.post("/rules/evaluate")
 def evaluate_rules():
     results = []
-    deve_executar, justificativa = avaliar_condiçao_ollama(condicao)
 
     for rule in rules_store:
         condicao = rule["condition"]
         acao = rule["action"]
         regra_id = rule["id"]
+
+        deve_executar, justificativa = avaliar_condiçao_ollama(condicao)
 
         if deve_executar:
             resultado_acao = executar_acao(acao)
@@ -51,10 +52,6 @@ def evaluate_rules():
             results.append(f'❌ "{regra_id}" ignorada\n🧠 {justificativa}')
 
     return {"message": "\n".join(results)}
-
-@app.get("/")
-def hello():
-    return{"msg": "API de automações com AI ativa!"}
 
 def executar_acao(acao: dict):
     tipo = acao.get("type")
@@ -69,37 +66,89 @@ def executar_acao(acao: dict):
         return log_action(acao["message"])
     
     elif tipo == "notify":
-        adicionar_notificacao["message"]
-        return f"🔔 Notificação enviada para a dashboard"
+        adicionar_notificacao(acao["message"])
+        return "🔔 Notificação enviada para a dashboard"
     
     return f"❓ Ação desconhecida: {tipo}"
 
-@app.get("/notificacoes")
-def get_notificacoes():
-    return JSONResponse(content={"notificacoes": notificacoes})
+@app.get("/notifications")
+async def get_notifications():
+    return {"notifications": notifications}
 
 def adicionar_notificacao(msg: str):
-    notificacoes.append(msg)
-    if len (notificacoes) > 50:
-        notificacoes.pop(0)
+    notifications.append(msg)
+    if len(notifications) > 50:
+        notifications.pop(0)
 
 @app.post("/rules/add")
-async def add_rule(request: Request):
-    form = await request.form()
+async def add_rule_form(
+    request: Request,
+    id: str = Form(...),
+    condition: str = Form(...),
+    type: str = Form(...),
+    to: str = Form(None),
+    url: str = Form(None),
+    message: str = Form(None),
+    payload: str = Form(None),
+):
     nova_regra = {
-        "id": form["id"],
-        "condition": form["condition"],
+        "id": id,
+        "condition": condition,
         "action": {
-            "type": form["type"],
-            "to": form.get("to"),
-            "url": form.get("url"),
-            "message": form.get("message"),
-            "payload": form.get("payload")
+            "type": type,
+            "to": to,
+            "url": url,
+            "message": message,
+            "payload": payload,
         }
     }
     rules_store.append(nova_regra)
-    salvar_regras()
+    save_rules(rules_store)
     return RedirectResponse("/", status_code=303)
+
+@app.post("/rules/generate/json")
+async def gerar_regra_ai_json(request: Request):
+    form = await request.form()
+    instrucao = form["instrucao"]
+
+    from ollama_client import gerar_regra
+    nova_regra = gerar_regra(instrucao)
+
+    if nova_regra:
+        rules_store.append(nova_regra)
+        save_rules()
+        return JSONResponse(content={
+            "message": "✅ Regra gerada com sucesso!",
+            "rule": nova_regra
+        })
+    else:
+        return JSONResponse(status_code=400, content={
+            "message": "❌ Erro ao gerar regra com IA."
+        })
+
+@app.post("/rules/generate/json")
+async def gerar_regra_ai_json(request: Request):
+    form = await request.form()
+    instrucao = form["instrucao"]
+
+    from ollama_client import gerar_regra
+    nova_regra = gerar_regra(instrucao)
+
+    if nova_regra:
+        rules_store.append(nova_regra)
+        save_rules()
+        return JSONResponse({"message": "Regra gerada com sucesso!", "rule": nova_regra})
+    else:
+        return JSONResponse({"message": "Erro ao gerar regra com IA"}, status_code=400)
+    
+@app.get("/")
+async def index(request: Request):
+    return templates.TemplateResponse("index.html", {"request": request})
+
+@app.post("/chat")
+async def chat(message: str = Form(...)):
+    resposta = gerar_resposta_ai(message)
+    return JSONResponse({"resposta": resposta})
 
 if __name__ == "__main__":
     threading.Thread(target=start_scheduler).start()
