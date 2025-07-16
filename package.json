@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@prisma/client": "^6.12.0",
+    "tedious": "^18.6.1"
+  }
+}
