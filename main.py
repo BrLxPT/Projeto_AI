@@ -1,154 +1,134 @@
-from fastapi import FastAPI, HTTPException, Request, Form
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
-from typing import List, Dict
-from rules_engine import evaluate_rule
-from storage import load_rules, save_rules
-from scheduler import start_scheduler
-from models import Rule
-from ollama_client import avaliar_condiçao_ollama, gerar_regra
-from actions import send_email, call_api, log_action
-import threading
+from http.server import SimpleHTTPRequestHandler, HTTPServer
+from utils.task_ai import TaskAI
+from typing import Dict, Any
 import json
+import os
+import requests
+import logging
 
-app = FastAPI()
-rules_store = load_rules()
-notifications = []  
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
-templates = Jinja2Templates(directory="templates")
+ai = TaskAI()
 
-class RuleRequest(BaseModel):
-    rule: str
-    context: Dict
-
-@app.get("/", response_class=HTMLResponse)
-def dashboard(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request, "rules": rules_store})
-
-@app.post("/rules", response_model=dict)
-def add_rule(rule: RuleRequest):
-    rules_store.append(rule.dict())
-    save_rules(rules_store)
-    return {"message": "Regra adicionada com sucesso."}
-
-@app.post("/rules/evaluate")
-def evaluate_rules():
-    results = []
-
-    for rule in rules_store:
-        condicao = rule["condition"]
-        acao = rule["action"]
-        regra_id = rule["id"]
-
-        deve_executar, justificativa = avaliar_condiçao_ollama(condicao)
-
-        if deve_executar:
-            resultado_acao = executar_acao(acao)
-            results.append(f'✅ "{regra_id}" ativada → {resultado_acao}\n🧠 {justificativa}')
+class CustomHandler(SimpleHTTPRequestHandler):
+    def do_POST(self):
+        if self.path == '/api/chat':
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            data = json.loads(post_data)
+            
+            response = ai.process_request(data.get('message', ''))
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'response': response}).encode())
         else:
-            results.append(f'❌ "{regra_id}" ignorada\n🧠 {justificativa}')
+            super().do_GET()
 
-    return {"message": "\n".join(results)}
+    def do_GET(self):
+        if self.path == '/':
+            self.path = '/templates/index.html'
+        elif self.path.startswith('/static/'):
+            self.path = self.path[1:]  # Remove a barra inicial
+        super().do_GET()
 
-def executar_acao(acao: dict):
-    tipo = acao.get("type")
+class ActionExecutor:
+    """Executor de ações com integração a APIs"""
 
-    if tipo == "send_email":
-        return send_email(acao["to"], acao.get("subject", "alerta AI"), acao["message"])
-    
-    elif tipo == "call_api":
-        return call_api(acao["url"], acao.get("payload", {}))
-    
-    elif tipo == "log":
-        return log_action(acao["message"])
-    
-    elif tipo == "notify":
-        adicionar_notificacao(acao["message"])
-        return "🔔 Notificação enviada para a dashboard"
-    
-    return f"❓ Ação desconhecida: {tipo}"
-
-@app.get("/notifications")
-async def get_notifications():
-    return {"notifications": notifications}
-
-def adicionar_notificacao(msg: str):
-    notifications.append(msg)
-    if len(notifications) > 50:
-        notifications.pop(0)
-
-@app.post("/rules/add")
-async def add_rule_form(
-    request: Request,
-    id: str = Form(...),
-    condition: str = Form(...),
-    type: str = Form(...),
-    to: str = Form(None),
-    url: str = Form(None),
-    message: str = Form(None),
-    payload: str = Form(None),
-):
-    nova_regra = {
-        "id": id,
-        "condition": condition,
-        "action": {
-            "type": type,
-            "to": to,
-            "url": url,
-            "message": message,
-            "payload": payload,
+    def __init__(self):
+        self.logger = logging.getLogger(__name__)
+        self.api_endpoints = {
+            'weather':{
+                'url': 'https://api.openweathermap.org/data/2.5/weather',
+                'params': {'units': 'metric', 'appid': 'SUA_CHAVE_API'}
+            },
+            'crypto':{
+                'url': 'https://api.coingecko.com/api/v3/simple/price',
+                'params': {'vs_currencies': 'usd'}
+            },
+            'calendar': {
+                'url': 'http://localhost:8000/api/calendar',  # Exemplo local
+                'headers': {'Content-Type': 'application/json'}
+            }
         }
-    }
-    rules_store.append(nova_regra)
-    save_rules(rules_store)
-    return RedirectResponse("/", status_code=303)
-
-@app.post("/rules/generate/json")
-async def gerar_regra_ai_json(request: Request):
-    form = await request.form()
-    instrucao = form["instrucao"]
-
-    from ollama_client import gerar_regra
-    nova_regra = gerar_regra(instrucao)
-
-    if nova_regra:
-        rules_store.append(nova_regra)
-        save_rules()
-        return JSONResponse(content={
-            "message": "✅ Regra gerada com sucesso!",
-            "rule": nova_regra
-        })
-    else:
-        return JSONResponse(status_code=400, content={
-            "message": "❌ Erro ao gerar regra com IA."
-        })
-
-@app.post("/rules/generate/json")
-async def gerar_regra_ai_json(request: Request):
-    form = await request.form()
-    instrucao = form["instrucao"]
-
-    from ollama_client import gerar_regra
-    nova_regra = gerar_regra(instrucao)
-
-    if nova_regra:
-        rules_store.append(nova_regra)
-        save_rules()
-        return JSONResponse({"message": "Regra gerada com sucesso!", "rule": nova_regra})
-    else:
-        return JSONResponse({"message": "Erro ao gerar regra com IA"}, status_code=400)
     
-@app.get("/")
-async def index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    def execute_api_call(self, api_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Executa chamada genérica a API"""
+        if api_name not in self.api_endpoints:
+            return {"error": f"API {api_name} não configurada"}
+        
+        config = self.api_endpoints[api_name]
+        try:
+            if api_name == 'weather':
+                params = {**config['params'], 'q': params['location']}
+                response = requests.get(config['url'], params=params)
+            elif api_name == 'crypto':
+                params = {**config['params'], 'ids': params['coin']}
+                response = requests.get(config['url'], params=params)
+            elif api_name == 'calendar':
+                response = requests.post(
+                    config['url'],
+                    json=params,
+                    headers=config.get('headers', {})
+                )
+            
+            response.raise_for_status()
+            return response.json()
+        
+        except Exception as e:
+            self.logger.error(f"Erro na API {api_name}: {str(e)}")
+            return {"error": str(e)}
 
-@app.post("/chat")
-async def chat(message: str = Form(...)):
-    resposta = gerar_resposta_ai(message)
-    return JSONResponse({"resposta": resposta})
+    def execute(self, action: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Executa uma ação com tratamento padronizado
+        
+        Args:
+            action: {
+                "type": "api_call"|"script"|"composite",
+                "api": nome da API (se aplicável),
+                "params": parâmetros para a ação
+            }
+        """
+        action_type = action.get('type')
+        
+        if action_type == 'api_call':
+            return self._execute_api_action(action)
+        elif action_type == 'script':
+            return self._execute_script_action(action)
+        else:
+            return {"error": f"Tipo de ação não suportado: {action_type}"}
+    
+    def _execute_api_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
+        """Executa ação de chamada a API"""
+        required = ['api', 'params']
+        if not all(k in action for k in required):
+            return {"error": f"Parâmetros obrigatórios faltando: {required}"}
+        
+        result = self.execute_api_call(action['api'], action['params'])
+        
+        if 'error' in result:
+            return {
+                "status": "error",
+                "message": f"Falha na API {action['api']}: {result['error']}"
+            }
+        
+        return {
+            "status": "success",
+            "data": result,
+            "message": f"Ação {action['api']} realizada"
+        }
+
+    def _execute_script_action(self, action: Dict[str, Any]) -> Dict[str, Any]:
+        """Executa scripts locais"""
+        # Implementação similar à anterior para scripts
+        pass
+
+def run_server():
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    print("Servidor rodando em http://localhost:8000")
+    server = HTTPServer(('0.0.0.0', 8000), CustomHandler)
+    server.serve_forever()
 
 if __name__ == "__main__":
-    threading.Thread(target=start_scheduler).start()
+    run_server()

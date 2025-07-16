@@ -1,49 +1,34 @@
 <!DOCTYPE html>
 <html lang="pt">
-
 <head>
+    <!-- Configurações básicas da página -->
     <meta charset="UTF-8">
-    <title>Dashboard AI</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Projecto AI</title>
+    <!-- Links para arquivos estáticos -->
     <link rel="stylesheet" href="/static/style.css">
-    <script src="/static/script.js" defer></script>
-    <link rel="icon" href="/static/favicon.ico" type="image/x-icon" />
+    <link rel="icon" href="/static/favicon.ico.jpg">
 </head>
-
 <body>
-    <h1>📋 Regras de Automação</h1>
-    <ul id="rules_list">
-        {% for rule in rules %}
-        <li><b>{{rule.id}}</b>: {{rule.condition}}</li>
-        {% endfor %}
-    </ul>
+    <!-- Estrutura principal da interface -->
+    <div class="container">
+        <header>
+            <h1>Assistente de Tarefas AI</h1>
+        </header>
+        
+        <main>
+            <!-- Área de interação -->
+            <div id="chat-container">
+                <div id="messages"></div>
+                <div id="input-area">
+                    <input type="text" id="user-input" placeholder="Digite sua solicitação...">
+                    <button id="send-btn">Enviar</button>
+                </div>
+            </div>
+        </main>
+    </div>
 
-    <h2>➕ Adicionar nova regra</h2>
-    <form method="post" action="/rules/add">
-        <input name="id" placeholder="ID da regra" required />
-        <input name="condition" placeholder="Condição" required />
-        <select name="type">
-            <option value="send_email">Email</option>
-            <option value="call_api">API</option>
-            <option value="log">Log</option>
-            <option value="notify">Notificação</option>
-        </select>
-        <input name="to" placeholder="Para (email)" />
-        <input name="url" placeholder="URL da API" />
-        <input name="message" placeholder="Mensagem" />
-        <input name="payload" placeholder="Payload (JSON opcional)" />
-        <button type="submit">Adicionar Regra</button>
-    </form>
-
-    <h2>🧠 Criar regra com AI</h2>
-    <form id="form_ai">
-        <input name="instrucao" id="instrucao_input" placeholder="Ex: Se estiver sol amanhã, envia email para Maria" size="60" required />
-        <button type="submit">Gerar Regra com AI</button>
-    </form>
-
-    <div id="msg"></div>
-
-    <h2>🔔 Notificações</h2>
-    <ul id="notificacoes"></ul>
+    <!-- Script JavaScript -->
+    <script src="/static/script.js"></script>
 </body>
-
 </html>

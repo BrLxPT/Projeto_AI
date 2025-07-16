@@ -1,0 +1,25 @@
+[
+    {
+        "intent": "verificar clima",
+        "action": "get_weather",
+        "parameters": {
+            "location": "{user_location}"
+        }
+    },
+    {
+        "intent": "preço bitcoin",
+        "action": "get_crypto_price",
+        "parameters": {
+            "coin": "bitcoin"
+        }
+    },
+    {
+        "intent": "agendar evento",
+        "action": "add_calendar_event",
+        "parameters": {
+            "title": "{event_title}",
+            "date": "{event_date}",
+            "time": "{event_time}"
+        }
+    }
+]
