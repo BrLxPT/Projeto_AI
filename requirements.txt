@@ -1,0 +1,8 @@
+chromadb>=0.4.0
+ollama
+SpeechRecognition
+pyserial
+RPi.GPIO
+requests
+wakeonlan
+selenium

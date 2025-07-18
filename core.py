@@ -3,6 +3,7 @@ import importlib
 import json
 from ollama_helper import ask_ollama
 from security import validate_command
+import platform
 
 class TaskEngine:
     def __init__(self):
@@ -13,14 +14,25 @@ class TaskEngine:
         plugins = {}
         for file in os.listdir("plugins"):
             if file.endswith(".py") and file != "__init__.py":
+                if file == "hardware_control.py" and platform.system() != "Linux":
+                    print("⚠️ Ignorando plugin de hardware: não estamos em Linux/Raspberry Pi")
+                    continue
                 module_name = file[:-3]
                 module = importlib.import_module(f"plugins.{module_name}")
                 plugins[module_name] = module.register()
         return plugins
 
     def generate_capabilities_list(self):
-        return [{"name": p["name"], "description": p["description"], "parameters": p["parameters"]} 
-                for p in self.plugins.values()]
+        capabilities = []
+        for p in self.plugins.values():
+            cap = {
+                "name": p.get("name", "unknown"),
+                "description": p.get("description", ""),
+                "parameters": p.get("parameters", {})
+            }
+            capabilities.append(cap)
+        return capabilities
+
 
     def execute_task(self, user_input):
         # Validar permissões
@@ -45,7 +57,7 @@ class TaskEngine:
         Generate JSON response with:
         - 'action': Action name or 'chain' for multiple
         - 'tasks': [array of actions] (if chained)
-        - 'parameters': {key: value}
+        - 'parameters': {{key: value}}
         - 'confirm': true/false (if dangerous)
         
         Examples:
@@ -56,6 +68,16 @@ class TaskEngine:
         ]}}
         """
         response = ask_ollama(prompt)
+
+        print("🧪 Resposta bruta do Ollama:")
+        print(response)
+
+        try:
+            return json.loads(response)
+        except json.JSONDecodeError as e:
+            print("❌ Erro ao converter JSON:", e)
+            return {"action": "none", "error": "Resposta inválida do Ollama"}
+
         return json.loads(response)
 
     def execute_single_task(self, command):
@@ -75,3 +97,15 @@ class TaskEngine:
             return {"status": "success", "result": result}
         except Exception as e:
             return {"status": "error", "message": str(e)}
+
+def load_plugins(self):
+    plugins = {}
+    for file in os.listdir("plugins"):
+        if file.endswith(".py") and file != "__init__.py":
+            if file == "hardware_control.py" and platform.system() != "Linux":
+                print("⚠️ Ignorando plugin de hardware: não estamos em Linux/Raspberry Pi")
+                continue
+            module_name = file[:-3]
+            module = importlib.import_module(f"plugins.{module_name}")
+            plugins[module_name] = module.register()
+    return plugins

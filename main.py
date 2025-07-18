@@ -1,7 +1,11 @@
 from core import TaskEngine
 import speech_recognition as sr
+from ollama_helper import OllamaAPI
+from flask import Flask, request, jsonify
 
+app = Flask(__name__)
 engine = TaskEngine()
+ollama = OllamaAPI()
 
 def voice_input():
     r = sr.Recognizer()
@@ -27,3 +31,13 @@ while True:
         
     result = engine.execute_task(user_input)
     print("Resultado:", result)
+
+@app.route("/chat", methods=["POST"])
+def chat_endpoint():
+    data = request.get_json()
+    resposta = ollama.generate(
+        model="llama3",
+        prompt=data["mensagem"],
+        temperature=0.7
+    )
+    return jsonify({"resposta": resposta["response"]})
