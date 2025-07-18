@@ -4,9 +4,11 @@ import json
 from ollama_helper import ask_ollama
 from security import validate_command
 import platform
+import re
 
 class TaskEngine:
     def __init__(self):
+        print("🚀 TaskEngine iniciado")
         self.plugins = self.load_plugins()
         self.capabilities = self.generate_capabilities_list()
 
@@ -20,6 +22,8 @@ class TaskEngine:
                 module_name = file[:-3]
                 module = importlib.import_module(f"plugins.{module_name}")
                 plugins[module_name] = module.register()
+        
+        print("🔌 Plugins carregados:", list(plugins.keys()))
         return plugins
 
     def generate_capabilities_list(self):
@@ -52,33 +56,40 @@ class TaskEngine:
     def generate_command(self, user_input):
         prompt = f"""
         USER REQUEST: {user_input}
-        AVAILABLE CAPABILITIES: {json.dumps(self.capabilities)}
-        
-        Generate JSON response with:
-        - 'action': Action name or 'chain' for multiple
-        - 'tasks': [array of actions] (if chained)
-        - 'parameters': {{key: value}}
-        - 'confirm': true/false (if dangerous)
-        
-        Examples:
-        {{"action": "email_send", "parameters": {{"to": "user@ex.com", "subject": "Hello", "body": "..."}}}}
-        {{"action": "chain", "tasks": [
-            {{"action": "pc_wake", "parameters": {{"mac": "01:23:45:67:89:AB"}}}},
-            {{"action": "script_run", "parameters": {{"path": "/scripts/backup.py"}}}}
-        ]}}
+        AVAILABLE CAPABILITIES: {json.dumps(self.capabilities, ensure_ascii=False)}
+
+        Gere SOMENTE um JSON com:
+        - 'action': nome da ação ou 'chain'
+        - 'parameters': {{...}}
+        - 'tasks': [] (se 'chain')
+        - 'confirm': true/false
+
+        Exemplo:
+        {{
+            "action": "email_send",
+            "parameters": {{
+                "to": "user@ex.com",
+                "subject": "Hello",
+                "body": "..."
+            }},
+            "confirm": false
+        }}
         """
-        response = ask_ollama(prompt)
+
+        response_text = ask_ollama(prompt)
 
         print("🧪 Resposta bruta do Ollama:")
-        print(response)
+        print(response_text)
+
+        json_puro = extrair_json(response_text)
 
         try:
-            return json.loads(response)
+            return json.loads(json_puro)
         except json.JSONDecodeError as e:
             print("❌ Erro ao converter JSON:", e)
-            return {"action": "none", "error": "Resposta inválida do Ollama"}
+            return {"action": "none", "error": "Resposta inválida"}
 
-        return json.loads(response)
+
 
     def execute_single_task(self, command):
         plugin = self.plugins.get(command["action"])
@@ -98,14 +109,16 @@ class TaskEngine:
         except Exception as e:
             return {"status": "error", "message": str(e)}
 
-def load_plugins(self):
-    plugins = {}
-    for file in os.listdir("plugins"):
-        if file.endswith(".py") and file != "__init__.py":
-            if file == "hardware_control.py" and platform.system() != "Linux":
-                print("⚠️ Ignorando plugin de hardware: não estamos em Linux/Raspberry Pi")
-                continue
-            module_name = file[:-3]
-            module = importlib.import_module(f"plugins.{module_name}")
-            plugins[module_name] = module.register()
-    return plugins
+def extrair_json(texto):
+    try:
+        blocos = re.findall(r"```(?:json)?\s*([\s\S]*?)```", texto)
+        if blocos:
+            return blocos[0].strip()
+        
+        json_bruto = re.search(r"\{.*\}", texto, re.DOTALL)
+        if json_bruto:
+            return json_bruto.group(0)
+    except Exception as e:
+        print("❌ Erro ao extrair JSON:", e)
+    
+    return ""
