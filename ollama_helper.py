@@ -1,37 +1,36 @@
 import requests
+from urllib3.exceptions import ReadTimeoutError
 
 class OllamaAPI:
-    def __init__(self, base_url="http://localhost:11434"):
+    def __init__(self, base_url="http://localhost:11434", timeout=60):
         self.base_url = base_url
-    
-    def generate(self, model: str, prompt: str, **kwargs):
-        endpoint = f"{self.base_url}/api/generate"
+        self.timeout = timeout  # Aumente o timeout padrão
+
+    def generate(self, model, prompt, temperature=0.7, format=None, max_retries=3):
         payload = {
             "model": model,
             "prompt": prompt,
-            **kwargs
+            "stream": False,
+            "options": {"temperature": temperature}
         }
-        response = requests.post(endpoint, json=payload)
-        response.raise_for_status()
-        return response.json()
-    
-def ask_ollama(prompt, model="llama3"):
-    response = requests.post(
-    "http://localhost:11434/api/generate",
-    json={
-            "model": model,
-            "prompt": prompt,
-            "stream": False
-        }
-    )
-    return response.json()["response"]
+        if format:
+            payload["format"] = format
 
-# Exemplo de uso
-if __name__ == "__main__":
-    ollama = OllamaAPI()
-    resposta = ollama.generate(
-        model="llama3",
-        prompt="Explique como a API do Ollama funciona",
-        stream=False
-    )
-    print(resposta["response"])
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    f"{self.base_url}/api/generate",
+                    json=payload,
+                    timeout=self.timeout
+                )
+                response.raise_for_status()
+                return response.json()
+            
+            except ReadTimeoutError:
+                if attempt == max_retries - 1:
+                    return {"status": "error", "message": "Timeout após várias tentativas"}
+                print(f"⚠️ Timeout (tentativa {attempt + 1}/{max_retries}), tentando novamente...")
+                continue
+                
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
