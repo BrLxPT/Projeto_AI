@@ -119,17 +119,26 @@ class TaskEngine:
         if not isinstance(command, dict) or "action" not in command:
             return {"status": "error", "message": "Comando inválido"}
 
-        plugin = self.plugins.get(command["action"])
-        if not plugin:
-            return {"status": "error", "message": f"Ação {command['action']} não encontrada"}
-        
-        if command.get("confirm"):
-            confirm = input(f"⚠️ Confirmar ação perigosa? ({command['action']}) [y/N]: ")
-            if confirm.lower() != "y":
-                return {"status": "cancelled", "message": "Ação cancelada pelo usuário"}
-        
+        # Debug: mostrar todos os plugins carregados
+        print("🔍 Plugins disponíveis:", list(self.plugins.keys()))
+    
+        # Encontrar a ação em qualquer plugin
+        action_found = None
+        for plugin_name, plugin_data in self.plugins.items():
+            if "actions" in plugin_data and command["action"] in plugin_data["actions"]:
+                action_found = plugin_data["actions"][command["action"]]
+                break
+    
+        if not action_found:
+            return {"status": "error", "message": f"Ação '{command['action']}' não encontrada em nenhum plugin"}
+    
+        # Verificação explícita da função execute
+        if not callable(action_found.get("execute")):
+            return {"status": "error", "message": f"Função 'execute' não encontrada ou inválida na ação '{command['action']}'"}
+    
+        # Execução com tratamento de erros
         try:
-            result = plugin["execute"](command.get("parameters", {}))
+            result = action_found["execute"](command.get("parameters", {}))
             return {"status": "success", "result": result}
         except Exception as e:
             return {"status": "error", "message": str(e)}
