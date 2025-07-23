@@ -2,6 +2,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import ssl
+import socket
 
 class EmailSender:
     def __init__(self):
@@ -29,29 +30,86 @@ class EmailSender:
             return {"status": "error", "message": f"Erro na configuração: {str(e)}"}
 
     def send(self, params):
-        """Envia o e-mail com os parâmetros configurados"""
+        """Envia o e-mail com tratamento avançado de erros"""
+        # Verificação de configuração
         if None in self.config.values():
-            return {"status": "error", "message": "Configuração SMTP não definida"}
+            return {
+                "status": "error",
+                "message": "Configuração SMTP incompleta. Execute configure_email() primeiro."
+            }
+
+        # Validação dos parâmetros de entrada
+        required_params = ['to', 'subject', 'body']
+        if not all(param in params for param in required_params):
+            return {
+                "status": "error",
+                "message": f"Parâmetros faltando. Necessário: {', '.join(required_params)}"
+            }
 
         try:
+            # Preparação da mensagem
             msg = MIMEMultipart()
             msg['From'] = self.config['email']
             msg['To'] = params['to']
             msg['Subject'] = params['subject']
-            msg.attach(MIMEText(params['body'], 'plain'))
+            msg.attach(MIMEText(params['body'], 'plain', 'utf-8'))
 
             context = ssl.create_default_context()
 
-            with smtplib.SMTP(self.config['smtp_server'], self.config['smtp_port']) as server:
+            # Configuração de timeout e tentativas
+            with smtplib.SMTP(
+                host=self.config['smtp_server'],
+                port=self.config['smtp_port'],
+                timeout=10
+            ) as server:
                 server.ehlo()
-                server.starttls(context=context)
-                server.ehlo()
-                server.login(self.config['email'], self.config['password'])
-                server.send_message(msg)
+            
+                # Suporte explícito para STARTTLS
+                if self.config['smtp_port'] in [587, 2587]:
+                    server.starttls(context=context)
+                    server.ehlo()
+            
+                # Autenticação com tratamento específico para Gmail
+                try:
+                    server.login(self.config['email'], self.config['password'])
+                except smtplib.SMTPAuthenticationError as auth_error:
+                    error_msg = "Falha na autenticação. "
+                    if "Application-specific password required" in str(auth_error):
+                        error_msg += "Requer senha de app do Google. Veja: https://support.google.com/mail/?p=InvalidSecondFactor"
+                    elif "BadCredentials" in str(auth_error):
+                        error_msg += "Credenciais inválidas. Verifique usuário/senha."
+                    else:
+                        error_msg += f"Erro SMTP: {str(auth_error)}"
+                    return {"status": "error", "message": error_msg}
+            
+                # Envio com verificação
+                try:
+                    server.send_message(msg)
+                    return {
+                        "status": "success",
+                        "message": f"E-mail enviado para {params['to']}"
+                    }
+                except smtplib.SMTPRecipientsRefused as send_error:
+                    return {
+                        "status": "error",
+                        "message": f"Endereço inválido: {params['to']}"
+                    }
 
-            return {"status": "success", "message": f"E-mail enviado para {params['to']}"}
+        except smtplib.SMTPConnectError:
+            return {
+                "status": "error",
+                "message": f"Não foi possível conectar ao servidor {self.config['smtp_server']}:{self.config['smtp_port']}"
+            }
+        except socket.timeout:
+            return {
+                "status": "error",
+                "message": "Timeout na conexão SMTP"
+            }
         except Exception as e:
-            return {"status": "error", "message": f"Erro ao enviar: {str(e)}"}
+            return {
+                "status": "error",
+                "message": f"Erro inesperado: {str(e)}"
+            }
 
 def register():
     email_sender = EmailSender()
