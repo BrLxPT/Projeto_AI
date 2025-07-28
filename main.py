@@ -48,7 +48,7 @@ def voice_input():
         print("Ouvindo... (fale agora)")
         try:
             audio = r.listen(source, timeout=5)
-            return r.recognize_google(audio, language="pt-BR")
+            return r.recognize_google(audio, language="pt")
         except sr.WaitTimeoutError:
             print("Tempo esgotado - nenhum comando detectado")
             return ""
