@@ -42,7 +42,7 @@ def validate_email(email):
     return '@' in parseaddr(email)[1]
 
 def voice_input():
-    """Captura entrada por voz usando microfone"""
+    """Captura entrada por voz usando microfone default do pc"""
     r = sr.Recognizer()
     with sr.Microphone() as source:
         print("Ouvindo... (fale agora)")
@@ -128,24 +128,36 @@ def process_user_input(user_input):
         }
 
 def setup_email_configuration():
-    """Configura interativamente os dados SMTP"""
+    """
+    Coleta interativamente os dados SMTP (servidor, porta, email e senha) do utilizador.
+    Retorna um dicionário com 'status' e 'config' (se sucesso).
+    """
     print("\n⚙️ Configuração de Email (pressione Enter para pular)")
     
+    # Agora o utilizador precisa fornecer todos os detalhes SMTP
+    smtp_server = input("Servidor SMTP (ex: smtp.gmail.com, smtp.outlook.com): ").strip()
+    smtp_port = input("Porta SMTP (ex: 587 para STARTTLS, 465 para SSL): ").strip()
+    sender_email = input("Seu email: ").strip()
+    sender_password = getpass.getpass("Sua Senha (ou Senha de Aplicativo para Gmail): ").strip()
+
     config = {
-        'smtp_server': input("Servidor SMTP (ex: smtp.gmail.com): ").strip(),
-        'smtp_port': input("Porta SMTP (ex: 587): ").strip(),
-        'email': input("Seu email: ").strip(),
-        'password': getpass.getpass("Senha/App Password: ").strip()
+        'smtp_server': smtp_server,
+        'smtp_port': smtp_port,
+        'email': sender_email,
+        'password': sender_password
     }
     
+    # Se qualquer campo essencial estiver vazio, considera que a configuração foi ignorada
     if not all(config.values()):
-        return {'status': 'skipped', 'message': 'Configuração ignorada'}
+        return {'status': 'skipped', 'message': 'Configuração de email ignorada: todos os campos são obrigatórios.'}
     
-    # Validação
+    # Validação da porta
     if not config['smtp_port'].isdigit():
-        return {'status': 'error', 'message': 'Porta inválida'}
+        return {'status': 'error', 'message': 'Porta inválida: deve ser um número inteiro.'}
+    
+    # Validação do email
     if not validate_email(config['email']):
-        return {'status': 'error', 'message': 'Email inválido'}
+        return {'status': 'error', 'message': 'Email inválido: formato incorreto.'}
     
     return {
         'status': 'success',
@@ -175,19 +187,33 @@ if __name__ == "__main__":
         print("$ ollama serve")
         exit(1)
 
-    # Configuração inicial
+    # Configuração inicial do email_sender
     if "email_sender" in engine.plugins:
         config_result = setup_email_configuration()
-        if config_result['status'] == 'error':
-            print(f"❌ {config_result['message']}")
-        elif config_result['status'] == 'success':
-            print("✅ Configuração SMTP salva")
+        
+        if config_result['status'] == 'success':
+            # AQUI ESTÁ A CORREÇÃO: Chamar o método configure da ferramenta email_sender
+            email_configure_action = engine.plugins['email_sender']['actions']['configure_email']['execute']
+            
+            # Chama o método configure da instância de EmailSender
+            tool_config_response = email_configure_action(config_result['config'])
+            
+            if tool_config_response['status'] == 'success':
+                print("✅ Configuração SMTP salva e aplicada à ferramenta.")
+            else:
+                print(f"❌ Erro ao aplicar configuração SMTP à ferramenta: {tool_config_response['message']}")
+        elif config_result['status'] == 'skipped':
+            print("ℹ️ Configuração de email ignorada.")
+        else: # status == 'error' da setup_email_configuration
+            print(f"❌ Erro na coleta da configuração de email: {config_result['message']}")
+
 
     # Loop principal
     while True:
         mode = input("\nModo (voz/texto/servidor): ").lower()
         
         if mode == "servidor":
+            print("Iniciando servidor Flask na porta 5000...")
             app.run(host='0.0.0.0', port=5000)
             break
             
