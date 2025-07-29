@@ -57,7 +57,12 @@ def voice_input():
             return ""
 
 def process_email_command(user_input):
-    """Processa especificamente comandos de envio de email"""
+    """
+    Processa especificamente comandos de envio de email.
+    Esta função pode ser removida se o LLM for capaz de gerar o JSON diretamente
+    com base no prompt_template em process_user_input.
+    Mantida para compatibilidade com o fluxo anterior.
+    """
     try:
         recipient = extract_email(user_input)
         if not recipient or not validate_email(recipient):
@@ -113,15 +118,85 @@ def process_email_command(user_input):
         }
 
 def process_user_input(user_input):
-    """Processa comandos genéricos do usuário"""
+    """
+    Processa comandos genéricos do usuário, usando o LLM para decidir a ação
+    e formatar o JSON para as ferramentas disponíveis.
+    """
+    prompt_template = f"""
+    Comando do usuário: "{user_input}"
+
+    Converta o comando do usuário para um objeto JSON que possa ser executado por uma ferramenta.
+    As ferramentas disponíveis incluem:
+    - 'pc_control': para controlar o PC.
+      - Ações:
+        - 'shutdown_pc': Desliga o computador. Parâmetros: 'confirm' (boolean, obrigatório para execução real).
+        - 'restart_pc': Reinicia o computador. Parâmetros: 'confirm' (boolean, obrigatório para execução real).
+    - 'email_sender': para enviar e-mails.
+      - Ações:
+        - 'send_email': Envia um e-mail. Parâmetros: 'to' (string), 'subject' (string), 'body' (string).
+
+    Se o comando for para desligar ou reiniciar o PC, o JSON deve ter:
+    {{
+        "action": "shutdown_pc" ou "restart_pc",
+        "parameters": {{
+            "confirm": true ou false (true se o usuário explicitamente pedir para desligar/reiniciar, caso contrário false para pedir confirmação)
+        }}
+    }}
+
+    Se o comando for para enviar um email, o JSON deve ter:
+    {{
+        "action": "send_email",
+        "parameters": {{
+            "to": "email do destinatário",
+            "subject": "assunto do email",
+            "body": "corpo do email"
+        }}
+    }}
+
+    Para outros comandos, gere uma resposta de texto simples no formato:
+    {{
+        "status": "text_response",
+        "message": "Sua resposta de texto aqui."
+    }}
+    Se não conseguir mapear para uma ação, retorne uma resposta de texto simples.
+
+    Exemplos de comandos para ferramentas:
+    - "Desliga o meu computador" -> {{"action": "shutdown_pc", "parameters": {{"confirm": false}}}}
+    - "Desliga o computador agora" -> {{"action": "shutdown_pc", "parameters": {{"confirm": true}}}}
+    - "Reinicia o PC" -> {{"action": "restart_pc", "parameters": {{"confirm": false}}}}
+    - "Reinicia o PC sem perguntar" -> {{"action": "restart_pc", "parameters": {{"confirm": true}}}}
+    - "Manda um email para joao@exemplo.com com o assunto reunião e o corpo olá joão" -> {{"action": "send_email", "parameters": {{"to": "joao@exemplo.com", "subject": "reunião", "body": "olá joão"}}}}
+    
+    Exemplos de respostas de texto:
+    - "Qual a previsão do tempo?" -> {{"status": "text_response", "message": "Não consigo verificar a previsão do tempo no momento."}}
+    - "Olá" -> {{"status": "text_response", "message": "Olá! Como posso ajudar?"}}
+    """
     try:
         response = ollama.generate(
-            model="llama3",
-            prompt=f"Converta para JSON o comando: {user_input}",
-            format="json"
+            model="llama3", # Ou o modelo que estiver a usar
+            prompt=prompt_template,
+            format="json", # Peça sempre JSON para comandos de ferramenta
+            temperature=0.0 # Use temperatura baixa para comandos precisos
         )
-        return json.loads(response['response'])
+        
+        # Tente carregar a resposta como JSON
+        try:
+            command = json.loads(response['response'])
+            # Verifique se é um comando de ferramenta válido ou uma resposta de texto
+            if "action" in command and "parameters" in command:
+                return command
+            elif command.get("status") == "text_response" and "message" in command:
+                return command # Já é uma resposta de texto formatada
+            else:
+                # Se não for um comando de ferramenta nem uma resposta de texto formatada,
+                # trate a resposta bruta como uma mensagem de texto simples.
+                return {"status": "text_response", "message": response['response']}
+        except json.JSONDecodeError:
+            # Se a resposta do LLM não for JSON válido, trate como resposta de texto
+            return {"status": "text_response", "message": response['response']}
+
     except Exception as e:
+        logger.error(f"Erro no processamento do input do usuário: {str(e)}")
         return {
             "status": "error",
             "message": f"Falha ao processar: {str(e)}"
@@ -192,10 +267,7 @@ if __name__ == "__main__":
         config_result = setup_email_configuration()
         
         if config_result['status'] == 'success':
-            # AQUI ESTÁ A CORREÇÃO: Chamar o método configure da ferramenta email_sender
             email_configure_action = engine.plugins['email_sender']['actions']['configure_email']['execute']
-            
-            # Chama o método configure da instância de EmailSender
             tool_config_response = email_configure_action(config_result['config'])
             
             if tool_config_response['status'] == 'success':
@@ -228,15 +300,15 @@ if __name__ == "__main__":
         if user_input.lower() in ['sair', 'exit']:
             break
             
-        # Processamento do comando
-        if '@' in user_input or 'enviar email' in user_input.lower():
-            command = process_email_command(user_input)
-        else:
-            command = process_user_input(user_input)
+        # Processamento do comando (agora process_user_input lida com tudo)
+        command = process_user_input(user_input)
         
         if command.get('status') == 'error':
             print(f"❌ {command['message']}")
             continue
-            
-        result = engine.execute_task(command)
-        print("↳ Resultado:", result)
+        elif command.get('status') == 'text_response':
+            print(f"🤖 {command['message']}")
+            continue
+        else: # É um comando de ferramenta
+            result = engine.execute_task(command)
+            print("↳ Resultado:", result)
