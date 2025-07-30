@@ -9,6 +9,7 @@ ALLOWED_ACTIONS = [
     "send_email",
     "shutdown_pc",
     "restart_pc",
+    "read_file",
     # Adicione aqui outras ações de outros plugins conforme os for desenvolvendo
     # Ex: "turn_on_light", "get_cpu_usage", "open_browser"
 ]
