@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import './index.css'; // Importa o novo ficheiro CSS
 
 // Componente principal da aplicação
 function App() {
@@ -14,6 +15,7 @@ function App() {
   });
   const [emailConfigStatus, setEmailConfigStatus] = useState(''); // Status da configuração de email
   const [isEmailConfigured, setIsEmailConfigured] = useState(false); // Se o email já foi configurado
+  const [isListening, setIsListening] = useState(false); // Estado para o reconhecimento de voz
 
   // URL base do seu backend Flask
   const API_BASE_URL = 'http://localhost:5000';
@@ -37,12 +39,12 @@ function App() {
   }, []);
 
   // Função para enviar o comando para o backend
-  const sendMessage = async () => {
-    if (input.trim() === '') return;
+  const sendMessage = async (messageText) => {
+    if (messageText.trim() === '') return;
 
-    const userMessage = { sender: 'user', text: input };
+    const userMessage = { sender: 'user', text: messageText };
     setMessages((prevMessages) => [...prevMessages, userMessage]);
-    setInput('');
+    setInput(''); // Limpa o input de texto, mesmo se for de voz
     setLoading(true);
 
     try {
@@ -109,32 +111,72 @@ function App() {
     }
   };
 
+  // Função para iniciar o reconhecimento de voz
+  const startVoiceInput = () => {
+    if (!('webkitSpeechRecognition' in window)) {
+      alert('Seu navegador não suporta reconhecimento de voz. Por favor, use Chrome.');
+      return;
+    }
+
+    const recognition = new window.webkitSpeechRecognition();
+    recognition.lang = 'pt-PT'; // Define o idioma para Português (Portugal)
+    recognition.interimResults = false; // Queremos apenas o resultado final
+    recognition.maxAlternatives = 1; // Apenas a melhor alternativa
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      console.log('Ouvindo...');
+      setMessages((prevMessages) => [...prevMessages, { sender: 'system', text: 'Estou a ouvir...' }]);
+    };
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      console.log('Transcrição:', transcript);
+      sendMessage(transcript); // Envia a transcrição para o backend
+    };
+
+    recognition.onerror = (event) => {
+      setIsListening(false);
+      console.error('Erro de reconhecimento de voz:', event.error);
+      setMessages((prevMessages) => [...prevMessages, { sender: 'system', text: `Erro de voz: ${event.error}` }]);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      console.log('Reconhecimento de voz terminou.');
+    };
+
+    recognition.start();
+  };
+
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-4 font-sans">
-      <div className="bg-white shadow-lg rounded-lg w-full max-w-2xl flex flex-col h-[80vh]">
+    <div className="app-container">
+      <div className="chat-window">
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white p-4 rounded-t-lg flex justify-between items-center">
-          <h1 className="text-2xl font-bold">Assistente de IA</h1>
+        <div className="chat-header">
+          <h1 className="header-title">Assistente de IA</h1>
           <button
             onClick={() => setShowEmailConfig(true)}
-            className="px-4 py-2 bg-white text-blue-600 rounded-md shadow hover:bg-gray-100 transition duration-200"
+            className="header-button"
           >
             {isEmailConfigured ? 'Email Configurado' : 'Configurar Email'}
           </button>
         </div>
 
         {/* Área de Mensagens */}
-        <div className="flex-1 p-4 overflow-y-auto space-y-4">
+        <div className="messages-area">
           {messages.map((msg, index) => (
             <div
               key={index}
-              className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={`message-bubble-wrapper ${
+                msg.sender === 'user' ? 'user-message-wrapper' : 'bot-message-wrapper'
+              }`}
             >
               <div
-                className={`max-w-[70%] p-3 rounded-lg shadow-md ${
+                className={`message-bubble ${
                   msg.sender === 'user'
-                    ? 'bg-blue-500 text-white rounded-br-none'
-                    : 'bg-gray-200 text-gray-800 rounded-bl-none'
+                    ? 'user-message-bubble'
+                    : 'bot-message-bubble'
                 }`}
               >
                 {msg.text}
@@ -142,98 +184,114 @@ function App() {
             </div>
           ))}
           {loading && (
-            <div className="flex justify-start">
-              <div className="max-w-[70%] p-3 rounded-lg shadow-md bg-gray-200 text-gray-800 rounded-bl-none">
+            <div className="bot-message-wrapper">
+              <div className="message-bubble bot-message-bubble">
                 Digitando...
+              </div>
+            </div>
+          )}
+          {isListening && (
+            <div className="bot-message-wrapper">
+              <div className="message-bubble listening-message-bubble">
+                A ouvir...
               </div>
             </div>
           )}
         </div>
 
         {/* Input da Mensagem */}
-        <div className="p-4 border-t border-gray-200 flex items-center space-x-2">
+        <div className="input-area">
           <input
             type="text"
-            className="flex-1 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="message-input"
             placeholder="Digite sua mensagem..."
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyPress={(e) => {
               if (e.key === 'Enter') {
-                sendMessage();
+                sendMessage(input); // Chama sendMessage com o input
               }
             }}
-            disabled={loading}
+            disabled={loading || isListening}
           />
           <button
-            onClick={sendMessage}
-            className="px-5 py-3 bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={loading}
+            onClick={() => sendMessage(input)} // Chama sendMessage com o input
+            className="send-button"
+            disabled={loading || isListening}
           >
             Enviar
+          </button>
+          <button
+            onClick={startVoiceInput}
+            className={`voice-button ${
+              isListening ? 'listening' : 'not-listening'
+            }`}
+            disabled={loading}
+          >
+            {isListening ? 'A Ouvir...' : 'Voz'}
           </button>
         </div>
       </div>
 
       {/* Modal de Configuração de Email */}
       {showEmailConfig && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg p-6 shadow-xl w-full max-w-md">
-            <h2 className="text-xl font-bold mb-4">Configurar Email SMTP</h2>
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <h2 className="modal-title">Configurar Email SMTP</h2>
             <div className="space-y-4">
-              <div>
-                <label className="block text-gray-700 text-sm font-bold mb-2">Servidor SMTP:</label>
+              <div className="modal-form-group">
+                <label className="modal-label">Servidor SMTP:</label>
                 <input
                   type="text"
-                  className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                  className="modal-input"
                   value={emailConfig.smtp_server}
                   onChange={(e) => setEmailConfig({ ...emailConfig, smtp_server: e.target.value })}
                   placeholder="ex: smtp.gmail.com"
                 />
               </div>
-              <div>
-                <label className="block text-gray-700 text-sm font-bold mb-2">Porta SMTP:</label>
+              <div className="modal-form-group">
+                <label className="modal-label">Porta SMTP:</label>
                 <input
                   type="number"
-                  className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                  className="modal-input"
                   value={emailConfig.smtp_port}
                   onChange={(e) => setEmailConfig({ ...emailConfig, smtp_port: e.target.value })}
                   placeholder="ex: 587 ou 465"
                 />
               </div>
-              <div>
-                <label className="block text-gray-700 text-sm font-bold mb-2">Seu Email:</label>
+              <div className="modal-form-group">
+                <label className="modal-label">Seu Email:</label>
                 <input
                   type="email"
-                  className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                  className="modal-input"
                   value={emailConfig.email}
                   onChange={(e) => setEmailConfig({ ...emailConfig, email: e.target.value })}
                   placeholder="seu.email@exemplo.com"
                 />
               </div>
-              <div>
-                <label className="block text-gray-700 text-sm font-bold mb-2">Senha/App Password:</label>
+              <div className="modal-form-group">
+                <label className="modal-label">Senha/App Password:</label>
                 <input
                   type="password"
-                  className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
+                  className="modal-input"
                   value={emailConfig.password}
                   onChange={(e) => setEmailConfig({ ...emailConfig, password: e.target.value })}
                   placeholder="Sua senha ou senha de aplicativo"
                 />
               </div>
             </div>
-            <p className="text-sm text-gray-600 mt-2">{emailConfigStatus}</p>
-            <div className="mt-6 flex justify-end space-x-3">
+            <p className="modal-status-text">{emailConfigStatus}</p>
+            <div className="modal-buttons">
               <button
                 onClick={() => setShowEmailConfig(false)}
-                className="px-4 py-2 bg-gray-300 text-gray-800 rounded-md shadow hover:bg-gray-400 transition duration-200"
+                className="modal-button cancel"
                 disabled={loading}
               >
                 Cancelar
               </button>
               <button
                 onClick={handleEmailConfigSubmit}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md shadow hover:bg-blue-700 transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="modal-button save"
                 disabled={loading}
               >
                 Salvar Configuração
