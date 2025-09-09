@@ -1,6 +1,6 @@
-from core import TaskEngine
+from .core import TaskEngine
 import speech_recognition as sr
-from ollama_helper import OllamaAPI
+from .ollama_helper import OllamaAPI
 from flask import Flask, request, jsonify
 from flask_cors import CORS # Importar Flask-CORS
 import re
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 CORS(app) # Habilitar CORS para todas as rotas
 engine = TaskEngine() # A instância do TaskEngine já carrega os plugins e capacidades
-ollama = OllamaAPI(timeout=120) # OllamaAPI é usado diretamente pelo TaskEngine para gerar comandos
+ollama = OllamaAPI(timeout=300) # OllamaAPI é usado diretamente pelo TaskEngine para gerar comandos
 
 # Variável global para armazenar o estado de configuração do e-mail
 # Em uma aplicação real, isso seria armazenado de forma persistente (ex: banco de dados)

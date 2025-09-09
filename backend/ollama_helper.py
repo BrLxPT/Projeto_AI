@@ -2,7 +2,7 @@ import requests
 from urllib3.exceptions import ReadTimeoutError
 
 class OllamaAPI:
-    def __init__(self, base_url="http://localhost:11434", timeout=60):
+    def __init__(self, base_url="http://localhost:11434", timeout=300):
         self.base_url = base_url
         self.timeout = timeout  # Aumente o timeout padrão
 

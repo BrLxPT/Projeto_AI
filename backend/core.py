@@ -3,9 +3,10 @@ import importlib
 import json
 import re
 import platform
-from ollama_helper import OllamaAPI
-from security import validate_command # Importa a função de validação
+from .ollama_helper import OllamaAPI
+from .security import validate_command # Importa a função de validação # Importa a função de validação
 import logging # Importar o módulo logging
+from flask import Flask, request, jsonify
 
 # Configure logging para core.py
 logging.basicConfig(
@@ -25,13 +26,13 @@ class TaskEngine:
         plugins = {}
         # logger.info(f"🔍 Procurando plugins na pasta: {os.path.abspath('plugins')}") # Removido/Comentado
     
-        for file in os.listdir("plugins"):
+        for file in os.listdir("backend/plugins"):
             # logger.info(f" - Encontrado: {file}") # Removido/Comentado
             if file.endswith(".py") and file != "__init__.py":
                 try:
                     module_name = file[:-3]
                     # logger.info(f"🔄 Tentando carregar {module_name}...") # Removido/Comentado
-                    module = importlib.import_module(f"plugins.{module_name}")
+                    module = importlib.import_module(f".plugins.{module_name}", package="backend")
                     plugin_data = module.register()
                     # logger.info(f"✅ Plugin registrado: {plugin_data['name']}") # Removido/Comentado
                     plugins[plugin_data["name"]] = plugin_data
@@ -64,21 +65,21 @@ class TaskEngine:
         return capabilities
 
     def execute_task(self, user_input_or_command):
-        # A validação de segurança é a primeira coisa
-        if not validate_command(user_input_or_command):
-            logger.warning(f"🚫 Comando não autorizado: {user_input_or_command}") # Mantido para avisos de segurança
-            return {"status": "error", "message": "🚫 Comando não autorizado"}
-
-        # Se o comando vier como string, ele precisa ser gerado pelo LLM primeiro
+        # Se o comando vier como uma string, a primeira coisa é gerar o comando JSON
         if isinstance(user_input_or_command, str):
             command = self.generate_command(user_input_or_command)
         else:
             command = user_input_or_command
 
-        # Se a geração do comando falhou ou retornou um erro, retorna esse erro
+        # Se a geração do comando falhou, retorna o erro
         if isinstance(command, dict) and command.get("status") == "error":
             return command
-            
+        
+        # **A VALIDAÇÃO DE SEGURANÇA VEM AQUI AGORA**
+        if not validate_command(command): # Agora a validação recebe um dicionário
+            logger.warning(f"🚫 Comando não autorizado: {command}")
+            return {"status": "error", "message": "🚫 Comando não autorizado"}
+        
         # Se for uma cadeia de comandos, executa cada um
         if command.get("action") == "chain":
             results = [self.execute_single_task(task) for task in command.get("tasks", [])]
@@ -205,4 +206,29 @@ class TaskEngine:
         except Exception as e:
             logger.error(f"Erro ao executar a ação '{command['action']}': {str(e)}") # Mantido para depuração de erros
             return {"status": "error", "message": str(e)}
+        
+task_engine_instance = TaskEngine()
+
+app = Flask(__name__)
+
+@app.route('/api/ask', methods=['POST'])
+def ask_ollie():
+    data = request.get_json()
+    user_query = data.get('query')
+    if not user_query:
+        return jsonify({"error": "Nenhuma consulta fornecida."}), 400
+
+    result = task_engine_instance.execute_task(user_query)
+
+    # Adapta a resposta para o formato JSON esperado pelo frontend
+    if result.get("status") == "text_response":
+        return jsonify({"message": result.get("message", "Sem resposta da IA.")})
+    elif result.get("status") == "success":
+        return jsonify({"message": f"Comando executado com sucesso: {result.get('result', '')}"})
+    else:
+        return jsonify({"message": f"Erro: {result.get('message', 'Erro desconhecido')}"})
+
+if __name__ == '__main__':
+    # A porta padrão é 5000, pode ser alterada se necessário
+    app.run(debug=True, port=int(os.environ.get("PORT", 5000)))
 
